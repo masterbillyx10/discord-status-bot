@@ -1,12 +1,10 @@
 import os
 import discord
 from discord.ext import commands, tasks
-import itertools
 
 # ตั้งค่า Intent ของบอท
 intents = discord.Intents.default()
 intents.message_content = True
-
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 # ---------------------------------------------------------
@@ -15,105 +13,89 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 OWNER_ID = 1505161074885001331         # User ID ของคุณ
 ANNOUNCE_CHANNEL_ID = 1529818198516437053 # Channel ID ช่องแจ้งเตือน
 
-# เก็บสถานะปัจจุบันของแต่ละระบบ
+# 🔴 ตั้งค่าไอดี Emoji เคลื่อนไหวตามที่กำหนด
+EMOJI_ON = "<a:online:1341575209605533726>"   # ใช้งานได้ปกติ
+EMOJI_OFF = "<a:offline:1437547680254529676>" # ปรับปรุง / ไม่พร้อมใช้งาน
+
+# เก็บสถานะปัจจุบัน 
 system_status = {
-    "tr": "🟢 ใช้งานได้ปกติ",
-    "unbanpiriya": "🟢 ใช้งานได้ปกติ"
+    "tr": {"text": "ใช้งานได้ปกติ", "is_online": True},
+    "unbanpiriya": {"text": "ใช้งานได้ปกติ", "is_online": True}
 }
 
-# ตัวสลับข้อความใต้ชื่อบอท
-status_cycle = itertools.cycle(["tr", "unbanpiriya"])
+# ---------------------------------------------------------
+# ฟังก์ชันสร้างกล่องข้อความสถานะแบบพรีเมียม
+# ---------------------------------------------------------
+def create_status_embed(title_text):
+    # เช็กว่าระบบปกติทั้งคู่ไหม (ถ้าปกติ = สีเขียว 0x2ecc71, ถ้ามีอันไหนพัง = สีแดง 0xe74c3c)
+    all_online = system_status["tr"]["is_online"] and system_status["unbanpiriya"]["is_online"]
+    embed_color = 0x2ecc71 if all_online else 0xe74c3c 
+
+    embed = discord.Embed(
+        title=f"🌐 {title_text}",
+        description="อัปเดตสถานะการทำงานของระบบแบบ Real-time\n━━━━━━━━━━━━━━━━━━━━━━",
+        color=embed_color
+    )
+    
+    # สลับอีโมจิตามสถานะ (on = ปกติ, off = ปรับปรุง)
+    tr_emoji = EMOJI_ON if system_status["tr"]["is_online"] else EMOJI_OFF
+    unban_emoji = EMOJI_ON if system_status["unbanpiriya"]["is_online"] else EMOJI_OFF
+
+    # ใส่ข้อมูลแต่ละระบบ 
+    embed.add_field(name="🔹 ระบบ TR", value=f"> {tr_emoji} **{system_status['tr']['text']}**\n", inline=False)
+    embed.add_field(name="🔹 ระบบ Unbanpiriya", value=f"> {unban_emoji} **{system_status['unbanpiriya']['text']}**\n", inline=False)
+    
+    embed.set_footer(text="ระบบทำงานออนไลน์อัตโนมัติตลอด 24 ชั่วโมง")
+    return embed
 
 # ---------------------------------------------------------
-# ระบบวนลูป (Tasks)
+# ระบบลูปแจ้งเตือนทุก 24 ชั่วโมง
 # ---------------------------------------------------------
-
-# 1. สลับข้อความใต้ชื่อบอททุกๆ 10 วินาที
-@tasks.loop(seconds=10)
-async def update_presence():
-    current = next(status_cycle)
-    if current == "tr":
-        await bot.change_presence(activity=discord.Game(f"TR: {system_status['tr']}"))
-    else:
-        await bot.change_presence(activity=discord.Game(f"Unbanpiriya: {system_status['unbanpiriya']}"))
-
-# 2. ส่งการ์ดอัปเดตสถานะอัตโนมัติลงช่องที่กำหนดทุกๆ 24 ชั่วโมง
 @tasks.loop(hours=24)
 async def auto_daily_status():
     channel = bot.get_channel(ANNOUNCE_CHANNEL_ID)
     if channel:
-        embed = build_status_embed("📢 สรุปสถานะระบบประจำวัน (24 ชม.)")
-        await channel.send(embed=embed)
-
-# Helper function สำหรับสร้าง Embed การ์ดสถานะสวยๆ
-def build_status_embed(title_text):
-    embed = discord.Embed(
-        title=title_text, 
-        color=0x2b2d31, # สีโทนเข้ม หรูหรา
-        description="เช็กสถานะการทำงานของระบบแบบ Real-time"
-    )
-    
-    # ใส่อีโมจิขยับได้อันแรก ตรงหน้าชื่อหัวข้อเล็กๆ (Author)
-    embed.set_author(
-        name="System Status Report",
-        icon_url="https://cdn.discordapp.com/emojis/1506963593302638693.webp?size=32&animated=true"
-    )
-    
-    embed.add_field(name="🔹 ระบบ TR", value=f"> **{system_status['tr']}**", inline=False)
-    embed.add_field(name="🔹 ระบบ Unbanpiriya", value=f"> **{system_status['unbanpiriya']}**", inline=False)
-    
-    # ใส่อีโมจิขยับได้อันที่สอง ตรงมุมซ้ายล่างสุด (Footer)
-    embed.set_footer(
-        text="ระบบทำงานออนไลน์ตลอด 24 ชั่วโมง", 
-        icon_url="https://cdn.discordapp.com/emojis/1437547680254529676.webp?size=128&animated=true"
-    )
-    return embed
+        await channel.send(embed=create_status_embed("สรุปสถานะระบบประจำวัน (24 ชม.)"))
 
 @bot.event
 async def on_ready():
-    print(f"✅ ล็อกอินสำเร็จในชื่อ: {bot.user.name}")
-    
-    # เริ่มทำงานระบบ Loop
-    if not update_presence.is_running():
-        update_presence.start()
+    print(f"✅ บอท {bot.user.name} ออนไลน์แล้ว!")
     if not auto_daily_status.is_running():
         auto_daily_status.start()
 
 # ---------------------------------------------------------
-# คำสั่งเปลี่ยนสถานะ (ผู้ดูแลเปลี่ยนได้คนเดียว)
+# คำสั่งจัดการ (เปลี่ยนสถานะ)
 # ---------------------------------------------------------
 
 @bot.command()
-async def set_tr(ctx, *, new_status: str):
-    """เปลี่ยนสถานะ TR เช่น !set_tr 🔴 ปิดปรับปรุง"""
+async def set_tr(ctx, state: str, *, message: str):
+    """วิธีใช้: !set_tr on ใช้งานได้ปกติ หรือ !set_tr off ปิดปรับปรุง"""
     if ctx.author.id != OWNER_ID:
-        await ctx.send("❌ คุณไม่มีสิทธิ์ใช้งานคำสั่งนี้ (เฉพาะเจ้าของบอทเท่านั้น)")
         return
         
-    system_status["tr"] = new_status
-    await ctx.send(f"✅ อัปเดตสถานะ **TR** เป็น: `{new_status}` เรียบร้อยแล้วครับ!")
+    is_online = state.lower() == "on"
+    system_status["tr"] = {"text": message, "is_online": is_online}
+    await ctx.send(embed=create_status_embed("อัปเดตสถานะ TR ล่าสุด"))
 
 @bot.command()
-async def set_unban(ctx, *, new_status: str):
-    """เปลี่ยนสถานะ Unbanpiriya เช่น !set_unban 🔴 ปิดปรับปรุง"""
+async def set_unban(ctx, state: str, *, message: str):
+    """วิธีใช้: !set_unban on ใช้งานได้ปกติ หรือ !set_unban off ปิดปรับปรุง"""
     if ctx.author.id != OWNER_ID:
-        await ctx.send("❌ คุณไม่มีสิทธิ์ใช้งานคำสั่งนี้ (เฉพาะเจ้าของบอทเท่านั้น)")
         return
         
-    system_status["unbanpiriya"] = new_status
-    await ctx.send(f"✅ อัปเดตสถานะ **Unbanpiriya** เป็น: `{new_status}` เรียบร้อยแล้วครับ!")
+    is_online = state.lower() == "on"
+    system_status["unbanpiriya"] = {"text": message, "is_online": is_online}
+    await ctx.send(embed=create_status_embed("อัปเดตสถานะ Unbanpiriya ล่าสุด"))
 
-# คำสั่งดูสถานะทั่วไป (ทุกคนพิมพ์ดูได้)
 @bot.command()
 async def status(ctx):
-    embed = build_status_embed("📊 อัปเดตสถานะระบบ (System Status)")
-    await ctx.send(embed=embed)
+    """พิมพ์ !status เพื่อเรียกดูหน้าต่างสถานะ"""
+    await ctx.send(embed=create_status_embed("System Status Report"))
 
 # ---------------------------------------------------------
-# รันบอทผ่าน Render
+# รันบอท
 # ---------------------------------------------------------
 TOKEN = os.getenv("DISCORD_TOKEN")
-
 if not TOKEN:
     print("❌ Error: ไม่พบ DISCORD_TOKEN!")
 else:
