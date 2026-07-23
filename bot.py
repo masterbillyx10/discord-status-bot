@@ -2,37 +2,54 @@ import os
 import discord
 from discord.ext import commands, tasks
 import datetime
+from flask import Flask
+from threading import Thread
 
-# ตั้งค่า Intent ของบอท
+# ---------------------------------------------------------
+# Web Server เล็กๆ หลอก Render ไม่ให้ขึ้น Port Scan Timeout (ใช้ฟรีได้ทันที)
+# ---------------------------------------------------------
+app = Flask('')
+
+@app.route('/')
+def home():
+    return "Bot is alive!"
+
+def run_web():
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host='0.0.0.0', port=port)
+
+def keep_alive():
+    t = Thread(target=run_web)
+    t.start()
+
+# ---------------------------------------------------------
+# ตั้งค่า บอท Discord
+# ---------------------------------------------------------
 intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# ---------------------------------------------------------
-# ตั้งค่า ID ต่างๆ ที่น้องหวือกำหนด
-# ---------------------------------------------------------
 OWNER_ID = 1505161074885001331            # User ID น้องหวือ
 ANNOUNCE_CHANNEL_ID = 1529818198516437053 # Channel ID ห้องแจ้งเตือนทั่วไป
 CONTROL_CHANNEL_ID = 1529834562799276174  # Channel ID ห้องแอดมิน (Control)
 PING_ROLE_ID = 1519165358911787038        # Role ID ยศที่ต้องการแท็ก
 
-# ไอดี Emoji ขยับได้
-EMOJI_ON = "<a:online:1529831651205709885>"
-EMOJI_OFF = "<a:offline:1529831624642924584>"
+EMOJI_ON_ID = 1529831651205709885   
+EMOJI_OFF_ID = 1529831624642924584  
 
-# ---------------------------------------------------------
-# ตัวแปรระบบ (เก็บสถานะ และ ID ข้อความล่าสุดเพื่อลบ)
-# ---------------------------------------------------------
 system_status = {
     "tr": {"text": "ใช้งานได้ปกติ", "is_online": True},
     "unbanpiriya": {"text": "ใช้งานได้ปกติ", "is_online": True}
 }
 
-last_announce_msg_id = None # จดจำ ID ข้อความล่าสุดเพื่อนำไปลบทิ้ง
+last_announce_msg_id = None 
 
-# ---------------------------------------------------------
-# ฟังก์ชันสร้างและส่งข้อความสถานะ (ลบของเก่า -> ลงของใหม่)
-# ---------------------------------------------------------
+def get_animated_emoji(emoji_id):
+    emoji = bot.get_emoji(emoji_id)
+    if emoji:
+        return str(emoji)
+    return f"<a:emoji:{emoji_id}>"
+
 def create_status_embed(title_text):
     all_online = system_status["tr"]["is_online"] and system_status["unbanpiriya"]["is_online"]
     embed_color = 0x2ecc71 if all_online else 0xe74c3c 
@@ -43,8 +60,8 @@ def create_status_embed(title_text):
         color=embed_color
     )
     
-    tr_emoji = EMOJI_ON if system_status["tr"]["is_online"] else EMOJI_OFF
-    unban_emoji = EMOJI_ON if system_status["unbanpiriya"]["is_online"] else EMOJI_OFF
+    tr_emoji = get_animated_emoji(EMOJI_ON_ID) if system_status["tr"]["is_online"] else get_animated_emoji(EMOJI_OFF_ID)
+    unban_emoji = get_animated_emoji(EMOJI_ON_ID) if system_status["unbanpiriya"]["is_online"] else get_animated_emoji(EMOJI_OFF_ID)
 
     embed.add_field(name="🔹 ระบบ TR", value=f"> {tr_emoji} **{system_status['tr']['text']}**\n", inline=False)
     embed.add_field(name="🔹 ระบบ Unbanpiriya", value=f"> {unban_emoji} **{system_status['unbanpiriya']['text']}**\n", inline=False)
@@ -55,31 +72,23 @@ def create_status_embed(title_text):
 async def send_status_update(channel, title):
     global last_announce_msg_id
     
-    # 1. วิ่งไปลบข้อความเก่า (ถ้ามี)
     if last_announce_msg_id:
         try:
             old_msg = await channel.fetch_message(last_announce_msg_id)
             await old_msg.delete()
         except:
-            pass # ถ้าลบไม่ได้ (เช่นมีคนมือบอนลบไปแล้ว) ก็ให้ข้ามไป
+            pass
             
-    # 2. ส่งข้อความใหม่ พร้อมแท็กยศ
     embed = create_status_embed(title)
     content = f"<@&{PING_ROLE_ID}> 📢 **{title}**"
     
     new_msg = await channel.send(content=content, embed=embed)
-    
-    # 3. จำ ID ข้อความใหม่เอาไว้ใช้ลบรอบหน้า
     last_announce_msg_id = new_msg.id
 
-# ---------------------------------------------------------
-# ระบบปุ่มกด (แผงควบคุมแอดมิน)
-# ---------------------------------------------------------
 class ControlPanel(discord.ui.View):
     def __init__(self):
-        super().__init__(timeout=None) # ปุ่มอยู่ถาวร ไม่หมดเวลา
+        super().__init__(timeout=None)
         
-    # ล็อกสิทธิ์: ถ้าน้องหวือไม่ได้กด จะแจ้งเตือน
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if interaction.user.id != OWNER_ID:
             await interaction.response.send_message("❌ คุณไม่มีสิทธิ์กดปุ่มนี้นะครับ!", ephemeral=True)
@@ -115,10 +124,6 @@ class ControlPanel(discord.ui.View):
         await send_status_update(bot.get_channel(ANNOUNCE_CHANNEL_ID), "สรุปสถานะระบบล่าสุด")
         await interaction.response.send_message("🔄 ส่งการ์ดแจ้งเตือนใบใหม่เรียบร้อย", ephemeral=True)
 
-# ---------------------------------------------------------
-# ระบบลูปแจ้งเตือน 06:00 น. อัตโนมัติ (เวลาประเทศไทย)
-# ---------------------------------------------------------
-# ตั้งค่าโซนเวลาเป็นไทย (UTC+7) และล็อกเวลา 6 โมงเช้า
 tz_th = datetime.timezone(datetime.timedelta(hours=7))
 time_6am = datetime.time(hour=6, minute=0, tzinfo=tz_th)
 
@@ -131,16 +136,12 @@ async def auto_daily_status():
 @bot.event
 async def on_ready():
     print(f"✅ บอท {bot.user.name} ออนไลน์แล้ว!")
-    bot.add_view(ControlPanel()) # ทำให้ปุ่มใช้งานได้ตลอดแม้รีสตาร์ทบอท
+    bot.add_view(ControlPanel())
     if not auto_daily_status.is_running():
         auto_daily_status.start()
 
-# ---------------------------------------------------------
-# คำสั่งเรียกแผงควบคุมมาใช้งาน (ใช้ครั้งเดียวในห้อง Control)
-# ---------------------------------------------------------
 @bot.command()
 async def setup(ctx):
-    """เรียกแผงควบคุมบอท (พิมพ์ได้แค่ห้อง Control)"""
     if ctx.author.id != OWNER_ID:
         return
     if ctx.channel.id != CONTROL_CHANNEL_ID:
@@ -155,10 +156,12 @@ async def setup(ctx):
     await ctx.send(embed=embed, view=ControlPanel())
 
 # ---------------------------------------------------------
-# รันบอท
+# เริ่มทำงาน Web Server + รันบอท
 # ---------------------------------------------------------
 TOKEN = os.getenv("DISCORD_TOKEN")
+
 if not TOKEN:
     print("❌ Error: ไม่พบ DISCORD_TOKEN!")
 else:
+    keep_alive() # เปิดเว็บหลอก Render
     bot.run(TOKEN)
