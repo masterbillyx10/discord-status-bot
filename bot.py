@@ -2,25 +2,24 @@ import os
 import discord
 from discord.ext import commands, tasks
 import datetime
-from flask import Flask
-from threading import Thread
+from aiohttp import web
 
 # ---------------------------------------------------------
-# Web Server เล็กๆ หลอก Render ไม่ให้ขึ้น Port Scan Timeout (ใช้ฟรีได้ทันที)
+# Web Server แบบ Async (aiohttp) ป้องกัน 502 Bad Gateway
 # ---------------------------------------------------------
-app = Flask('')
+async def handle_ping(request):
+    return web.Response(text="Bot is alive and running!")
 
-@app.route('/')
-def home():
-    return "Bot is alive!"
-
-def run_web():
+async def start_web_server():
+    app = web.Application()
+    app.router.add_get('/', handle_ping)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    
     port = int(os.environ.get("PORT", 10000))
-    app.run(host='0.0.0.0', port=port)
-
-def keep_alive():
-    t = Thread(target=run_web)
-    t.start()
+    site = web.TCPSite(runner, '0.0.0.0', port)
+    await site.start()
+    print(f"🌐 Web Server started on port {port}")
 
 # ---------------------------------------------------------
 # ตั้งค่า บอท Discord
@@ -136,6 +135,9 @@ async def auto_daily_status():
 @bot.event
 async def on_ready():
     print(f"✅ บอท {bot.user.name} ออนไลน์แล้ว!")
+    # เริ่มต้น Web Server พร้อมกับที่บอทตื่น
+    await start_web_server()
+    
     bot.add_view(ControlPanel())
     if not auto_daily_status.is_running():
         auto_daily_status.start()
@@ -156,12 +158,11 @@ async def setup(ctx):
     await ctx.send(embed=embed, view=ControlPanel())
 
 # ---------------------------------------------------------
-# เริ่มทำงาน Web Server + รันบอท
+# รันบอท
 # ---------------------------------------------------------
 TOKEN = os.getenv("DISCORD_TOKEN")
 
 if not TOKEN:
     print("❌ Error: ไม่พบ DISCORD_TOKEN!")
 else:
-    keep_alive() # เปิดเว็บหลอก Render
     bot.run(TOKEN)
