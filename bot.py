@@ -7,30 +7,30 @@ from aiohttp import web
 from deep_translator import GoogleTranslator
 
 # ---------------------------------------------------------
-# ตั้งค่า ID ต่างๆ (ของพาร์ตเนอร์ และ ดิสคอร์ดเรา)
+# ตั้งค่า ID ต่างๆ
 # ---------------------------------------------------------
-OWNER_ID = 1505161074885001331            # User ID น้องหวือ
-ANNOUNCE_CHANNEL_ID = 1529818198516437053 # Channel ID ห้องแจ้งเตือนทั่วไป
-CONTROL_CHANNEL_ID = 1529834562799276174  # Channel ID ห้องแอดมิน (Control)
-PING_ROLE_ID = 1519165358911787038        # Role ID ยศ @WarZ ที่ต้องการแท็ก
+OWNER_ID = 1505161074885001331            
+ANNOUNCE_CHANNEL_ID = 1529818198516437053 
+CONTROL_CHANNEL_ID = 1529834562799276174  
+PING_ROLE_ID = 1519165358911787038        
 
-# 🔴 ไอดีห้องดึงข่าวสารพาร์ตเนอร์ & ห้องประกาศแปลไทยของเรา
-PARTNER_CHANNEL_ID = 1525847194794594384   # ห้อง #cheat-updates พาร์ตเนอร์
-MY_UPDATE_CHANNEL_ID = 1507056687612301332 # ห้อง 📜 Update ในดิสคอร์ดเรา
+PARTNER_CHANNEL_ID = 1525847194794594384   
+MY_UPDATE_CHANNEL_ID = 1507056687612301332 
 
 EMOJI_ON_ID = 1529831651205709885   
 EMOJI_OFF_ID = 1529831624642924584  
 
 # ---------------------------------------------------------
-# Web Server แบบ Async (aiohttp) ป้องกัน 502 Bad Gateway
+# Web Server (ต้องเปิด Port 10000 ทันทีที่สตาร์ต)
 # ---------------------------------------------------------
 async def handle_ping(request):
-    return web.Response(text="Bot is alive and running!")
+    return web.Response(text="Bot is alive!")
 
 async def start_web_server():
     app = web.Application()
     app.router.add_get('/', handle_ping)
     app.router.add_head('/', handle_ping)
+    
     runner = web.AppRunner(app)
     await runner.setup()
     
@@ -42,14 +42,9 @@ async def start_web_server():
 # ---------------------------------------------------------
 # ตั้งค่า บอท Discord หลัก
 # ---------------------------------------------------------
-class MyBot(commands.Bot):
-    async def setup_hook(self):
-        # รัน Web Server แบบ Background Task ไม่ให้บล็อกบอท
-        self.loop.create_task(start_web_server())
-
 intents = discord.Intents.default()
 intents.message_content = True
-bot = MyBot(command_prefix="!", intents=intents)
+bot = commands.Bot(command_prefix="!", intents=intents)
 
 system_status = {
     "tr": {"text": "ใช้งานได้ปกติ", "is_online": True},
@@ -99,9 +94,6 @@ async def send_status_update(channel, title):
     new_msg = await channel.send(content=content, embed=embed)
     last_announce_msg_id = new_msg.id
 
-# ---------------------------------------------------------
-# ฟังก์ชันแปลภาษาไทย (ใช้ deep-translator) + ส่งการ์ด
-# ---------------------------------------------------------
 async def process_and_forward_update(raw_text):
     try:
         cleaned_text = raw_text.replace("@everyone", "").replace("@here", "").strip()
@@ -126,18 +118,12 @@ async def process_and_forward_update(raw_text):
     except Exception as e:
         print(f"❌ เกิดข้อผิดพลาดในการแปล/ส่งข้อความ: {e}")
 
-# ---------------------------------------------------------
-# คำสั่งสั่งแปลด้วยตัวเอง
-# ---------------------------------------------------------
 @bot.command()
 async def translate(ctx, *, text: str):
     if ctx.author.id == OWNER_ID:
         await process_and_forward_update(text)
         await ctx.send("✅ แปลภาษาและประกาศลงช่องเรียบร้อยแล้วครับ!")
 
-# ---------------------------------------------------------
-# ระบบแผงควบคุม
-# ---------------------------------------------------------
 class ControlPanel(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
@@ -209,11 +195,19 @@ async def setup(ctx):
     await ctx.send(embed=embed, view=ControlPanel())
 
 # ---------------------------------------------------------
-# รันบอทหลัก
+# จุดสำคัญ: รัน Web Server ก่อนเริ่มต่อ Discord
 # ---------------------------------------------------------
-TOKEN = os.getenv("DISCORD_TOKEN")
+async def main():
+    TOKEN = os.getenv("DISCORD_TOKEN")
+    if not TOKEN:
+        print("❌ Error: ไม่พบ DISCORD_TOKEN!")
+        return
 
-if not TOKEN:
-    print("❌ Error: ไม่พบ DISCORD_TOKEN!")
-else:
-    bot.run(TOKEN)
+    # 1. เปิด Web Server ทันที
+    await start_web_server()
+    
+    # 2. เริ่มเชื่อมต่อบอท Discord
+    await bot.start(TOKEN)
+
+if __name__ == "__main__":
+    asyncio.run(main())
