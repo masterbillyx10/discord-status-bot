@@ -21,15 +21,14 @@ EMOJI_ON_ID = 1529831651205709885
 EMOJI_OFF_ID = 1529831624642924584  
 
 # ---------------------------------------------------------
-# Web Server (ต้องเปิด Port 10000 ทันทีที่สตาร์ต)
+# Web Server (แก้ไขแล้ว ป้องกัน Route ซ้ำ)
 # ---------------------------------------------------------
 async def handle_ping(request):
     return web.Response(text="Bot is alive!")
 
 async def start_web_server():
     app = web.Application()
-    app.router.add_get('/', handle_ping)
-    app.router.add_head('/', handle_ping)
+    app.router.add_get('/', handle_ping) # add_get รองรับทั้ง GET และ HEAD อัตโนมัติ
     
     runner = web.AppRunner(app)
     await runner.setup()
@@ -195,7 +194,7 @@ async def setup(ctx):
     await ctx.send(embed=embed, view=ControlPanel())
 
 # ---------------------------------------------------------
-# จุดสำคัญ: รัน Web Server ก่อนเริ่มต่อ Discord
+# รัน Web Server และ Discord Bot ไปพร้อมกัน
 # ---------------------------------------------------------
 async def main():
     TOKEN = os.getenv("DISCORD_TOKEN")
@@ -203,10 +202,10 @@ async def main():
         print("❌ Error: ไม่พบ DISCORD_TOKEN!")
         return
 
-    # 1. เปิด Web Server ทันที
+    # เปิด Web Server ก่อน
     await start_web_server()
     
-    # 2. เริ่มเชื่อมต่อบอท Discord
+    # เชื่อมต่อบอท
     await bot.start(TOKEN)
 
 if __name__ == "__main__":
