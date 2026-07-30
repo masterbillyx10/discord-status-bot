@@ -1,4 +1,3 @@
 discord.py
 aiohttp
-googletrans==3.1.0a0
-discord.py-self
+deep-translator
