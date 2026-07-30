@@ -15,7 +15,7 @@ CONTROL_CHANNEL_ID = 1529834562799276174  # Channel ID ห้องแอดม�
 PING_ROLE_ID = 1519165358911787038        # Role ID ยศ @WarZ ที่ต้องการแท็ก
 
 # 🔴 ไอดีห้องดึงข่าวสารพาร์ตเนอร์ & ห้องประกาศแปลไทยของเรา
-PARTNER_CHANNEL_ID = 1525847194794594384 # ห้อง #cheat-updates พาร์ตเนอร์
+PARTNER_CHANNEL_ID = 1525847194794594384   # ห้อง #cheat-updates พาร์ตเนอร์
 MY_UPDATE_CHANNEL_ID = 1507056687612301332 # ห้อง 📜 Update ในดิสคอร์ดเรา
 
 EMOJI_ON_ID = 1529831651205709885   
@@ -42,9 +42,14 @@ async def start_web_server():
 # ---------------------------------------------------------
 # ตั้งค่า บอท Discord หลัก
 # ---------------------------------------------------------
+class MyBot(commands.Bot):
+    async def setup_hook(self):
+        # รัน Web Server แบบ Background Task ไม่ให้บล็อกบอท
+        self.loop.create_task(start_web_server())
+
 intents = discord.Intents.default()
 intents.message_content = True
-bot = commands.Bot(command_prefix="!", intents=intents)
+bot = MyBot(command_prefix="!", intents=intents)
 
 system_status = {
     "tr": {"text": "ใช้งานได้ปกติ", "is_online": True},
@@ -103,7 +108,6 @@ async def process_and_forward_update(raw_text):
         if not cleaned_text:
             return
 
-        # แปลภาษาอังกฤษเป็นภาษาไทย
         translated = GoogleTranslator(source='auto', target='th').translate(cleaned_text)
 
         channel = bot.get_channel(MY_UPDATE_CHANNEL_ID)
@@ -123,7 +127,7 @@ async def process_and_forward_update(raw_text):
         print(f"❌ เกิดข้อผิดพลาดในการแปล/ส่งข้อความ: {e}")
 
 # ---------------------------------------------------------
-# คำสั่งแปลมือกรณีอยากสั่งแปลเอง
+# คำสั่งสั่งแปลด้วยตัวเอง
 # ---------------------------------------------------------
 @bot.command()
 async def translate(ctx, *, text: str):
@@ -185,7 +189,6 @@ async def auto_daily_status():
 @bot.event
 async def on_ready():
     print(f"✅ บอทหลัก {bot.user.name} ออนไลน์เรียบร้อยแล้ว!")
-    await start_web_server()
     bot.add_view(ControlPanel())
     if not auto_daily_status.is_running():
         auto_daily_status.start()
