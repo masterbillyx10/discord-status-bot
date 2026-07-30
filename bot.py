@@ -4,7 +4,7 @@ import discord
 from discord.ext import commands, tasks
 import datetime
 from aiohttp import web
-from googletrans import Translator
+from deep_translator import GoogleTranslator
 
 # ---------------------------------------------------------
 # ตั้งค่า ID ต่างๆ (ของพาร์ตเนอร์ และ ดิสคอร์ดเรา)
@@ -20,8 +20,6 @@ MY_UPDATE_CHANNEL_ID = 1507056687612301332 # ห้อง 📜 Update ในด�
 
 EMOJI_ON_ID = 1529831651205709885   
 EMOJI_OFF_ID = 1529831624642924584  
-
-translator = Translator()
 
 # ---------------------------------------------------------
 # Web Server แบบ Async (aiohttp) ป้องกัน 502 Bad Gateway
@@ -97,17 +95,16 @@ async def send_status_update(channel, title):
     last_announce_msg_id = new_msg.id
 
 # ---------------------------------------------------------
-# ฟังก์ชันแปลภาษาไทย + ส่งการ์ดประกาศอัปเดต
+# ฟังก์ชันแปลภาษาไทย (ใช้ deep-translator) + ส่งการ์ด
 # ---------------------------------------------------------
 async def process_and_forward_update(raw_text):
     try:
-        # ตัดข้อความพวก @everyone หรือ @here ออกก่อนแปล
         cleaned_text = raw_text.replace("@everyone", "").replace("@here", "").strip()
         if not cleaned_text:
             return
 
-        # แปลภาษาอังกฤษ -> ไทย
-        translated = translator.translate(cleaned_text, src='en', dest='th').text
+        # แปลภาษาอังกฤษเป็นภาษาไทย
+        translated = GoogleTranslator(source='auto', target='th').translate(cleaned_text)
 
         channel = bot.get_channel(MY_UPDATE_CHANNEL_ID)
         if channel:
@@ -120,11 +117,19 @@ async def process_and_forward_update(raw_text):
             embed.add_field(name="📝 ข้อความต้นฉบับ (Original)", value=f"```\n{cleaned_text[:1000]}\n```", inline=False)
             embed.set_footer(text="ระบบแปลภาษาและแจ้งเตือนอัตโนมัติ")
             
-            # ส่งข่าวสารพร้อมแท็กยศ @WarZ
             await channel.send(content=f"📢 <@&{PING_ROLE_ID}> **มีอัปเดตใหม่ครับ!**", embed=embed)
             print("✅ ส่งข่าวสารที่แปลแล้วลงช่องสำเร็จ!")
     except Exception as e:
         print(f"❌ เกิดข้อผิดพลาดในการแปล/ส่งข้อความ: {e}")
+
+# ---------------------------------------------------------
+# คำสั่งแปลมือกรณีอยากสั่งแปลเอง
+# ---------------------------------------------------------
+@bot.command()
+async def translate(ctx, *, text: str):
+    if ctx.author.id == OWNER_ID:
+        await process_and_forward_update(text)
+        await ctx.send("✅ แปลภาษาและประกาศลงช่องเรียบร้อยแล้วครับ!")
 
 # ---------------------------------------------------------
 # ระบบแผงควบคุม
@@ -179,7 +184,7 @@ async def auto_daily_status():
 
 @bot.event
 async def on_ready():
-    print(f"✅ บอทหลัก {bot.user.name} ออนไลน์แล้ว!")
+    print(f"✅ บอทหลัก {bot.user.name} ออนไลน์เรียบร้อยแล้ว!")
     await start_web_server()
     bot.add_view(ControlPanel())
     if not auto_daily_status.is_running():
@@ -201,42 +206,11 @@ async def setup(ctx):
     await ctx.send(embed=embed, view=ControlPanel())
 
 # ---------------------------------------------------------
-# ระบบดักฟังข้อความข้ามดิสคอร์ด (Self-Bot)
+# รันบอทหลัก
 # ---------------------------------------------------------
-user_client = discord.Client()
+TOKEN = os.getenv("DISCORD_TOKEN")
 
-@user_client.event
-async def on_ready():
-    print(f"👀 บัญชีผู้ใช้ ({user_client.user.name}) เริ่มต้นการเฝ้าสังเกตการณ์พาร์ตเนอร์แล้ว...")
-
-@user_client.event
-async def on_message(message):
-    # เช็กว่าข้อความมาจากห้อง #cheat-updates ของพาร์ตเนอร์ไหม
-    if message.channel.id == PARTNER_CHANNEL_ID:
-        print(f"📩 ตรวจพบอัปเดตใหม่จากพาร์ตเนอร์: {message.content}")
-        # ส่งต่อให้บอทหลักนำไปแปลภาษาไทย + โพสต์ลงห้องเรา
-        bot.loop.create_task(process_and_forward_update(message.content))
-
-# ---------------------------------------------------------
-# เริ่มทำงานระบบทั้งหมดพร้อมกัน
-# ---------------------------------------------------------
-BOT_TOKEN = os.getenv("DISCORD_TOKEN")
-USER_TOKEN = os.getenv("USER_TOKEN") # ดึงจาก Environment Variable
-
-async def main():
-    if not BOT_TOKEN:
-        print("❌ Error: ไม่พบ DISCORD_TOKEN!")
-        return
-    
-    # รันบอทหลัก และ Self-bot ไปพร้อมๆ กัน
-    tasks_list = [bot.start(BOT_TOKEN)]
-    
-    if USER_TOKEN:
-        tasks_list.append(user_client.start(USER_TOKEN, bot=False))
-    else:
-        print("⚠️ Warning: ไม่พบ USER_TOKEN ระบบดึงข้อความข้ามดิสจะไม่ทำงาน")
-
-    await asyncio.gather(*tasks_list)
-
-if __name__ == "__main__":
-    asyncio.run(main())
+if not TOKEN:
+    print("❌ Error: ไม่พบ DISCORD_TOKEN!")
+else:
+    bot.run(TOKEN)
